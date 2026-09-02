@@ -1,0 +1,16 @@
+# Netlify configuration for VehicleShield Frontend
+
+[build]
+  base = "frontend"
+  publish = "dist"
+  command = "npm run build"
+
+# Environment variable defaults
+[build.environment]
+  NODE_VERSION = "20"
+
+# Single Page App (SPA) redirect rule so React Router routes load seamlessly
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

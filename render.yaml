@@ -1,0 +1,37 @@
+services:
+  # 1. FastAPI Backend & AI CV Engine
+  - type: web
+    name: vehicleshield-backend
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: "cd backend && pip install -r requirements.txt"
+    startCommand: "cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///./vehicleshield.db
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 10080
+      - key: PYTHONPATH
+        value: .
+
+  # 2. React Vite Frontend
+  - type: web
+    name: vehicleshield-frontend
+    runtime: static
+    region: oregon
+    plan: free
+    buildCommand: "cd frontend && npm install && npm run build"
+    staticPublishPath: "frontend/dist"
+    routes:
+      - type: rewrite
+        source: "/*"
+        destination: "/index.html"
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: vehicleshield-backend
+          property: host
