@@ -51,21 +51,29 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
         stream.getTracks().forEach((track) => track.stop());
       }
 
-      const constraints = {
-        video: {
-          facingMode: { ideal: facingMode },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: false
-      };
+      let mediaStream;
+      try {
+        const constraints = {
+          video: {
+            facingMode: { ideal: facingMode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        };
+        mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (errConstraint) {
+        console.warn("Retrying camera with generic constraints:", errConstraint);
+        mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
 
-      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       setStream(mediaStream);
+      setCameraActive(true);
+
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
+        videoRef.current.play().catch((e) => console.warn("Auto-play error:", e));
       }
-      setCameraActive(true);
 
       // Check if torch/flashlight is supported
       const videoTrack = mediaStream.getVideoTracks()[0];
@@ -75,7 +83,7 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
       }
     } catch (err) {
       console.error("Camera access error:", err);
-      setCameraError("Camera access unavailable. You can upload or select a test vehicle plate below.");
+      setCameraError("Camera access unavailable. Check browser camera permissions, or upload/select a test vehicle plate below.");
       setCameraActive(false);
     }
   };
@@ -95,6 +103,14 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
       stopCamera();
     };
   }, [facingMode]);
+
+  // Ensure stream stays attached to video element
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch((e) => console.warn("Video play error:", e));
+    }
+  }, [stream]);
 
   // Toggle Torch
   const toggleTorch = async () => {
@@ -249,16 +265,14 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
       {/* Main Viewport Container */}
       <div className="relative w-full aspect-[4/3] bg-black rounded-2xl overflow-hidden border-2 border-slate-800 shadow-2xl flex items-center justify-center">
         
-        {/* Real Live Video */}
-        {cameraActive && (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-          />
-        )}
+        {/* Real Live Video Feed */}
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className={`w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`}
+        />
 
         {/* Fallback Camera Placeholder / Error State */}
         {!cameraActive && (
