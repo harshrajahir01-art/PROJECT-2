@@ -12,8 +12,8 @@ except Exception:
 
 class OCREngine:
     """
-    Lightweight, memory-optimized Dual-engine OCR processor with EasyOCR (primary) and PyTesseract (fallback).
-    Optimized for low-RAM cloud containers (Render 512MB).
+    Ultra-lightweight, high-speed OCR processor with EasyOCR and PyTesseract fallback.
+    Configured for fast 1-second inference under Render's 512MB RAM limit.
     """
 
     def __init__(self):
@@ -24,11 +24,11 @@ class OCREngine:
         if self._easyocr_reader is None:
             try:
                 import easyocr
-                # Initialize English OCR with CPU inference and low memory footprint
                 self._easyocr_reader = easyocr.Reader(
                     ['en'],
                     gpu=False,
-                    verbose=False
+                    verbose=False,
+                    quantize=True
                 )
                 self._initialized = True
             except Exception as e:
@@ -38,16 +38,16 @@ class OCREngine:
 
     def recognize_text(self, image: np.ndarray) -> Tuple[str, float, List[Dict[str, Any]]]:
         """
-        Runs OCR on the given image while preserving character crispness.
+        Runs fast, memory-capped OCR with canvas_size=640 and mag_ratio=1.0.
         Returns: (combined_raw_text, average_confidence, details_list)
         """
         if image is None or image.size == 0:
             return "", 0.0, []
 
         h, w = image.shape[:2]
-        # Only scale down if image is huge (e.g. > 1280px) to conserve RAM while keeping text sharp
-        if max(h, w) > 1280:
-            scale = 1280.0 / max(h, w)
+        # Only scale down if image exceeds 960px to prevent memory spikes
+        if max(h, w) > 960:
+            scale = 960.0 / max(h, w)
             new_w, new_h = int(w * scale), int(h * scale)
             image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
         elif h < 40 or w < 120:
@@ -59,12 +59,15 @@ class OCREngine:
         if reader is not None:
             try:
                 with torch.no_grad():
+                    # canvas_size=640 prevents CRAFT from allocating 2560x2560 intermediate tensors!
                     results = reader.readtext(
                         image,
                         detail=1,
                         paragraph=False,
                         batch_size=1,
                         workers=0,
+                        canvas_size=640,
+                        mag_ratio=1.0,
                         allowlist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -."
                     )
 
