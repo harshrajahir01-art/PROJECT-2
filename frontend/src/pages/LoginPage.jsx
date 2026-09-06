@@ -12,15 +12,25 @@ export const LoginPage = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
 
+  const [wakeTimer, setWakeTimer] = useState(false);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
+    setWakeTimer(false);
+
+    // If request takes longer than 4s (Render cold start)
+    const timer = setTimeout(() => {
+      setWakeTimer(true);
+    }, 4000);
 
     try {
       await login(email.trim(), password);
+      clearTimeout(timer);
       navigate('/scan');
     } catch (err) {
+      clearTimeout(timer);
       console.error("Login attempt failed:", err);
       if (err.response) {
         if (err.response.status === 401) {
@@ -29,12 +39,14 @@ export const LoginPage = () => {
           setError(err.response.data?.detail || `Server Error (${err.response.status}).`);
         }
       } else if (err.request) {
-        setError("Cannot reach backend server. If using Netlify, ensure the Python backend is deployed on Render and connected via VITE_API_URL.");
+        setError("Cloud server was asleep and is now waking up. Please click 'Sign In' once more to connect!");
       } else {
         setError("Authentication failed. Please try again.");
       }
     } finally {
+      clearTimeout(timer);
       setLoading(false);
+      setWakeTimer(false);
     }
   };
 
@@ -111,7 +123,7 @@ export const LoginPage = () => {
               disabled={loading}
               className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-600/30 flex items-center justify-center space-x-2 transition-all disabled:opacity-50"
             >
-              <span>{loading ? 'Authenticating...' : 'Sign In to VehicleShield'}</span>
+              <span>{loading ? (wakeTimer ? 'Waking up cloud server (~15s)...' : 'Authenticating...') : 'Sign In to VehicleShield'}</span>
               <ArrowRight className="h-4 w-4" />
             </button>
           </form>

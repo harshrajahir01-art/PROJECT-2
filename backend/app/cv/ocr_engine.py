@@ -28,8 +28,7 @@ class OCREngine:
                 self._easyocr_reader = easyocr.Reader(
                     ['en'],
                     gpu=False,
-                    verbose=False,
-                    quantize=True
+                    verbose=False
                 )
                 self._initialized = True
             except Exception as e:
@@ -39,20 +38,20 @@ class OCREngine:
 
     def recognize_text(self, image: np.ndarray) -> Tuple[str, float, List[Dict[str, Any]]]:
         """
-        Runs OCR on the given image with size standardization to conserve RAM.
+        Runs OCR on the given image while preserving character crispness.
         Returns: (combined_raw_text, average_confidence, details_list)
         """
         if image is None or image.size == 0:
             return "", 0.0, []
 
-        # Standardize plate image size: optimal for CRNN recognition is height ~80-120px
         h, w = image.shape[:2]
-        if h > 180 or w > 600:
-            scale = min(120.0 / h, 500.0 / w)
-            new_w, new_h = max(int(w * scale), 32), max(int(h * scale), 32)
+        # Only scale down if image is huge (e.g. > 1280px) to conserve RAM while keeping text sharp
+        if max(h, w) > 1280:
+            scale = 1280.0 / max(h, w)
+            new_w, new_h = int(w * scale), int(h * scale)
             image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
-        elif h < 45 or w < 140:
-            scale = max(70.0 / h, 220.0 / w)
+        elif h < 40 or w < 120:
+            scale = max(60.0 / max(h, 1), 180.0 / max(w, 1))
             new_w, new_h = int(w * scale), int(h * scale)
             image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
 

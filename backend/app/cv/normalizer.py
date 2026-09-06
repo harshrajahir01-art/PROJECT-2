@@ -35,11 +35,19 @@ DIGIT_TO_CHAR = {
 }
 
 def clean_ocr_text(text: str) -> str:
-    """Removes all whitespaces, dashes, dots, and non-alphanumeric symbols."""
+    """Removes all whitespaces, dashes, dots, and non-alphanumeric symbols, and strips IND / INDIA."""
     if not text:
         return ""
-    # Filter out non-alphanumeric
-    cleaned = re.sub(r'[^A-Za-z0-9]', '', text).upper()
+    # Strip common non-plate words from HSRP plates and dealer frames
+    t = re.sub(r'\b(IND|INDIA|BHARAT|GOVT|POLICE)\b', ' ', text, flags=re.IGNORECASE)
+    cleaned = re.sub(r'[^A-Za-z0-9]', '', t).upper()
+    
+    # Also strip prefix/suffix IND if attached
+    if cleaned.startswith("IND") and len(cleaned) >= 11:
+        cleaned = cleaned[3:]
+    if cleaned.endswith("IND") and len(cleaned) >= 11:
+        cleaned = cleaned[:-3]
+        
     return cleaned
 
 def normalize_indian_plate(raw_text: str) -> Tuple[Optional[str], float, str]:
@@ -52,7 +60,7 @@ def normalize_indian_plate(raw_text: str) -> Tuple[Optional[str], float, str]:
         return None, 0.0, "INVALID_TOO_SHORT"
     
     # 1. Check for Bharat (BH) series: e.g. 22BH1234AA or 21BH5678A
-    bh_match = re.match(r'^([0-9OI]{2})(BH|8H)([0-9OISZB]{4})([A-Z0-9]{1,2})$', cleaned)
+    bh_match = re.search(r'([0-9OI]{2})(BH|8H)([0-9OISZB]{4})([A-Z0-9]{1,2})', cleaned)
     if bh_match:
         yy, bh, num, series = bh_match.groups()
         yy = ''.join(CHAR_TO_DIGIT.get(c, c) for c in yy)
@@ -62,20 +70,25 @@ def normalize_indian_plate(raw_text: str) -> Tuple[Optional[str], float, str]:
         normalized = f"{yy}{bh}{num}{series}"
         return normalized, 0.95, "BH_SERIES"
 
-    # 2. Standard Indian Plate Format: [State(2 chars)][RTO(1-2 digits)][Series(1-3 chars)][Number(4 digits)]
+    # 2. Extract potential plate candidate if extra text surrounds it (e.g. dealer frames or IND)
+    target = cleaned
+    if len(cleaned) > 10:
+        # Search for known 2-letter state code position
+        for i in range(len(cleaned) - 7):
+            candidate_state = cleaned[i:i+2]
+            if candidate_state in INDIAN_STATE_CODES:
+                # Take up to 10 chars from state code
+                target = cleaned[i:i+10]
+                break
+
+    # 3. Standard Indian Plate Format: [State(2 chars)][RTO(1-2 digits)][Series(1-3 chars)][Number(4 digits)]
     # Example: GJ01AB1234, MH12CD5678, DL1C1234, KA03GH3456
-    # Let's perform slot-based correction if length is 9 or 10
-    if 8 <= len(cleaned) <= 11:
+    if 8 <= len(target) <= 11:
         # Step A: First 2 chars -> State Code (Alphabet only)
-        state_part = cleaned[:2]
+        state_part = target[:2]
         fixed_state = ''.join(DIGIT_TO_CHAR.get(c, c) for c in state_part)
         
-        # If not in state codes, try checking closest match
-        if fixed_state not in INDIAN_STATE_CODES:
-            # Maybe the state code had a typo
-            pass
-        
-        rest = cleaned[2:]
+        rest = target[2:]
         
         # Step B: Identify the 4-digit trailing number (last 4 characters)
         last_4 = rest[-4:]
@@ -84,15 +97,10 @@ def normalize_indian_plate(raw_text: str) -> Tuple[Optional[str], float, str]:
         # Step C: Middle segment (RTO code + Series)
         middle = rest[:-4]
         
-        # Usually RTO code is 1-2 digits and series is 1-3 letters
-        # Let's partition middle into digits then letters
-        # Find transition from digits to letters
         rto_digits = []
         series_chars = []
         
-        # Typical pattern: 2 digits RTO, 1-2 letters series
         if len(middle) == 3: # e.g. '1AB' or '01A'
-            # Try 2 digits + 1 letter or 1 digit + 2 letters
             if middle[0].isdigit() and middle[1].isdigit():
                 rto_digits = [CHAR_TO_DIGIT.get(c, c) for c in middle[:2]]
                 series_chars = [DIGIT_TO_CHAR.get(c, c) for c in middle[2:]]
@@ -113,7 +121,6 @@ def normalize_indian_plate(raw_text: str) -> Tuple[Optional[str], float, str]:
             rto_digits = [CHAR_TO_DIGIT.get(c, c) for c in middle[:2]]
             series_chars = [DIGIT_TO_CHAR.get(c, c) for c in middle[2:]]
         else:
-            # Fallback direct pass
             rto_digits = [CHAR_TO_DIGIT.get(c, c) for c in middle]
             series_chars = []
 
@@ -125,14 +132,14 @@ def normalize_indian_plate(raw_text: str) -> Tuple[Optional[str], float, str]:
         # Validate format using Standard Indian Regex
         standard_regex = r'^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{4}$'
         if re.match(standard_regex, normalized):
-            score = 0.90 if fixed_state in INDIAN_STATE_CODES else 0.70
+            score = 0.92 if fixed_state in INDIAN_STATE_CODES else 0.75
             return normalized, score, "STANDARD_INDIAN"
     
-    # 3. Fallback General Regex Check
+    # 4. Fallback General Regex Check
     general_match = re.search(r'([A-Z]{2}\s?[0-9]{1,2}\s?[A-Z]{0,3}\s?[0-9]{4})', cleaned)
     if general_match:
         norm = clean_ocr_text(general_match.group(1))
-        return norm, 0.65, "REGEX_FALLBACK"
+        return norm, 0.70, "REGEX_FALLBACK"
 
     # If all structure matches fail, return cleaned text with low confidence
     return cleaned, 0.30, "UNSTRUCTURED"
