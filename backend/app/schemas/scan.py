@@ -21,7 +21,9 @@ class ScanResult(BaseModel):
     plate_crop_url: Optional[str] = None
     
     # Vehicle Database Match
-    is_registered: bool = False
+    is_registered: bool = True
+    saved_to_registry: bool = True
+    auto_registered: bool = False
     vehicle_id: Optional[str] = None
     vehicle_type: Optional[VehicleType] = None
     manufacturer: Optional[str] = None

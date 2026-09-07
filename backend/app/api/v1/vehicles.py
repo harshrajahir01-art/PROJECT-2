@@ -121,16 +121,28 @@ def check_vehicle_manual(
     )
 
     if not vehicle:
-        return {
-            "found": False,
-            "registration_number": plate,
-            "status": "UNREGISTERED",
-            "risk_level": "NONE",
-            "message": "Vehicle not found in registry."
-        }
+        # Automatically save newly checked vehicle directly into the Vehicle Registry
+        vehicle = Vehicle(
+            registration_number=plate,
+            vehicle_type=VehicleType.SEDAN,
+            manufacturer="Observed Vehicle",
+            model="Field Registration",
+            color="Standard",
+            status=VehicleStatus.CLEAR,
+            risk_level=RiskLevel.NONE,
+            registered_rto=f"{plate[:2]} RTO" if len(plate) >= 2 else "RTO",
+            registration_date=datetime.utcnow(),
+            notes=f"Auto-saved directly to registry via checkpoint verification at {payload.location_name or 'Manual Checkpoint Entry'}"
+        )
+        db.add(vehicle)
+        db.commit()
+        db.refresh(vehicle)
+        detection_event.vehicle_id = vehicle.id
+        db.commit()
 
     return {
         "found": True,
+        "auto_registered": True,
         "vehicle": format_vehicle_response(vehicle, current_user),
         "is_flagged": vehicle.status in [VehicleStatus.STOLEN, VehicleStatus.SUSPECTED_CRIME, VehicleStatus.WANTED]
     }

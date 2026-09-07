@@ -42,10 +42,30 @@ def evaluate_and_record_scan(
 
     # 2. Query vehicle database
     vehicle = db.query(Vehicle).filter(Vehicle.registration_number == final_plate).first()
+    auto_registered = False
+
+    if not vehicle:
+        # Directly save to registry!
+        vehicle = Vehicle(
+            registration_number=final_plate,
+            vehicle_type=VehicleType.SEDAN,
+            manufacturer="Observed Vehicle",
+            model="Field Registry Entry",
+            color="Standard",
+            status=VehicleStatus.CLEAR,
+            risk_level=RiskLevel.NONE,
+            registered_rto=f"{final_plate[:2]} RTO" if len(final_plate) >= 2 else "RTO",
+            registration_date=datetime.utcnow(),
+            notes=f"Auto-saved directly to registry via real-time ANPR scanner at {location_name or 'Field Checkpoint'}"
+        )
+        db.add(vehicle)
+        db.commit()
+        db.refresh(vehicle)
+        auto_registered = True
 
     # 3. Create Detection Event (Observation Event)
     detection_event = DetectionEvent(
-        vehicle_id=vehicle.id if vehicle else None,
+        vehicle_id=vehicle.id,
         registration_number=final_plate,
         ocr_confidence=ocr_conf,
         plate_detection_confidence=plate_conf,
@@ -66,10 +86,10 @@ def evaluate_and_record_scan(
     alert_triggered = False
     alert_id = None
     alert_severity = None
-    recommended_action = "Vehicle record verified clear. Standard passage permitted."
+    recommended_action = "Vehicle record verified clear. Directly saved in registry." if auto_registered else "Vehicle record verified clear. Standard passage permitted."
     instructions = "No action required."
 
-    if vehicle:
+    if vehicle and not auto_registered:
         is_flagged = vehicle.status in [
             VehicleStatus.STOLEN,
             VehicleStatus.SUSPECTED_CRIME,
@@ -114,10 +134,6 @@ def evaluate_and_record_scan(
             db.commit()
             db.refresh(alert)
             alert_id = alert.id
-    else:
-        # Unregistered vehicle
-        recommended_action = "Unregistered vehicle. Verify physical RC book and documentation."
-        instructions = "Vehicle is not in the authorized database registry."
 
     # 5. Fetch past sightings for timeline context
     past_detections = db.query(DetectionEvent).filter(
@@ -160,7 +176,9 @@ def evaluate_and_record_scan(
         ocr_confidence=round(ocr_conf, 3),
         plate_detection_confidence=round(plate_conf, 3),
         plate_crop_url=f"/uploads/{plate_crop_filename}" if plate_crop_filename else None,
-        is_registered=vehicle is not None,
+        is_registered=True,
+        saved_to_registry=True,
+        auto_registered=auto_registered,
         vehicle_id=vehicle.id if vehicle else None,
         vehicle_type=vehicle.vehicle_type if vehicle else None,
         manufacturer=vehicle.manufacturer if vehicle else None,

@@ -11,6 +11,9 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
   const realtimeTimerRef = useRef(null);
+  const isScanningFrameRef = useRef(false);
+  const lastDetectedPlateRef = useRef(null);
+  const lastDetectedTimeRef = useRef(0);
 
   const [stream, setStream] = useState(null);
   const [cameraActive, setCameraActive] = useState(false);
@@ -25,8 +28,9 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
   
   // Real-Time Scanning Mode
   const [isRealtime, setIsRealtime] = useState(true);
-  const [realtimeStatus, setRealtimeStatus] = useState('Searching for plate...');
+  const [realtimeStatus, setRealtimeStatus] = useState('Real-Time ANPR Active • Aiming...');
   const [scanCount, setScanCount] = useState(0);
+  const [lockedPlate, setLockedPlate] = useState(null);
 
   // Play audio alert on plate detection
   const playChime = (flagged) => {
@@ -173,9 +177,10 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
 
   // Capture Frame from Live Camera & Send to API
   const captureAndScan = useCallback(async (isAuto = false) => {
-    if (!videoRef.current || isProcessing) return;
+    if (!videoRef.current || isScanningFrameRef.current) return;
     if (videoRef.current.readyState < 2) return; // Wait for video frame readiness
 
+    isScanningFrameRef.current = true;
     if (!isAuto) {
       setIsProcessing(true);
     } else {
@@ -185,13 +190,15 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
     try {
       const video = videoRef.current;
       const canvas = canvasRef.current;
+      if (!video || !canvas) return;
+
       canvas.width = video.videoWidth || 640;
       canvas.height = video.videoHeight || 480;
       
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const base64Data = canvas.toDataURL('image/jpeg', 0.88);
+      const base64Data = canvas.toDataURL('image/jpeg', 0.85);
 
       const payload = {
         image_base64: base64Data,
@@ -204,16 +211,32 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
       const res = await api.post('/scan/base64', payload);
       setScanCount((c) => c + 1);
 
-      // If a valid license plate was locked on
+      // If a valid license plate was recognized
       if (res.data.success && res.data.registration_number) {
-        setRealtimeStatus(`Plate Locked: ${res.data.registration_number}`);
-        playChime(res.data.alert_triggered);
-        onScanComplete(res.data);
+        const reg = res.data.registration_number;
+        const now = Date.now();
+        const isNewDetection = (reg !== lastDetectedPlateRef.current) || (now - lastDetectedTimeRef.current > 6000);
+
+        setLockedPlate({
+          plate: reg,
+          alert: res.data.alert_triggered,
+          status: res.data.status
+        });
+
+        if (isNewDetection) {
+          lastDetectedPlateRef.current = reg;
+          lastDetectedTimeRef.current = now;
+          setRealtimeStatus(`Plate Locked: ${reg} • Saved to Registry`);
+          playChime(res.data.alert_triggered);
+          onScanComplete(res.data);
+        } else {
+          setRealtimeStatus(`Tracking: ${reg} • In Registry`);
+        }
       } else {
         if (!isAuto) {
           onScanComplete(res.data);
         } else {
-          setRealtimeStatus('Scanning for license plate...');
+          setRealtimeStatus('Real-Time ANPR Active • Aiming at plate...');
         }
       }
     } catch (err) {
@@ -225,15 +248,16 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
         });
       }
     } finally {
+      isScanningFrameRef.current = false;
       if (!isAuto) {
         setIsProcessing(false);
       }
     }
-  }, [gpsLocation, scanLocationName, isProcessing, onScanComplete, setIsProcessing]);
+  }, [gpsLocation, scanLocationName, onScanComplete, setIsProcessing]);
 
-  // Real-Time Scanning Loop (every 2.0s when camera active and real-time enabled)
+  // Real-Time Scanning Loop (continuous frame analysis every 1.8s)
   useEffect(() => {
-    if (!isRealtime || !cameraActive || isProcessing) {
+    if (!isRealtime || !cameraActive) {
       if (realtimeTimerRef.current) {
         clearInterval(realtimeTimerRef.current);
         realtimeTimerRef.current = null;
@@ -242,10 +266,10 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
     }
 
     realtimeTimerRef.current = setInterval(() => {
-      if (cameraActive && !isProcessing) {
+      if (cameraActive && !isScanningFrameRef.current) {
         captureAndScan(true);
       }
-    }, 2000);
+    }, 1800);
 
     return () => {
       if (realtimeTimerRef.current) {
@@ -253,7 +277,7 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
         realtimeTimerRef.current = null;
       }
     };
-  }, [isRealtime, cameraActive, isProcessing, captureAndScan]);
+  }, [isRealtime, cameraActive, captureAndScan]);
 
   // Upload File Fallback
   const handleFileUpload = async (e) => {
@@ -405,7 +429,13 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
         {/* AI Targeting Reticle HUD Overlay */}
         {cameraActive && (
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-6">
-            <div className="relative w-full max-w-[85%] h-36 border border-blue-500/40 rounded-lg flex flex-col justify-between p-2 shadow-inner">
+            <div className={`relative w-full max-w-[85%] h-36 border-2 rounded-lg flex flex-col justify-between p-2 shadow-inner transition-all duration-300 ${
+              lockedPlate
+                ? lockedPlate.alert
+                  ? 'border-red-500 bg-red-950/20 shadow-[0_0_24px_rgba(239,68,68,0.4)]'
+                  : 'border-emerald-400 bg-emerald-950/20 shadow-[0_0_24px_rgba(52,211,153,0.4)]'
+                : 'border-blue-500/40'
+            }`}>
               {/* Corner HUD Markers */}
               <div className="hud-corner hud-tl"></div>
               <div className="hud-corner hud-tr"></div>
@@ -413,20 +443,33 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
               <div className="hud-corner hud-br"></div>
 
               {/* Target Reticle Header */}
-              <div className="flex justify-between items-center text-[10px] text-blue-400 font-mono tracking-wider uppercase">
+              <div className="flex justify-between items-center text-[10px] font-mono tracking-wider uppercase">
                 <span className="flex items-center space-x-1.5">
-                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                  <span className="font-bold">ANPR SENSOR</span>
+                  <span className={`inline-block w-2 h-2 rounded-full animate-ping ${
+                    lockedPlate ? (lockedPlate.alert ? 'bg-red-500' : 'bg-emerald-400') : 'bg-emerald-400'
+                  }`}></span>
+                  <span className={`font-bold ${
+                    lockedPlate ? (lockedPlate.alert ? 'text-red-400' : 'text-emerald-300') : 'text-blue-400'
+                  }`}>
+                    {lockedPlate ? `LOCKED: ${lockedPlate.plate}` : 'ANPR SENSOR ACTIVE'}
+                  </span>
                 </span>
                 <span className="text-gray-400">{facingMode === 'environment' ? 'REAR' : 'FRONT'}</span>
               </div>
 
               {/* Scanning Laser Line Animation */}
-              <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_14px_#38BDF8] animate-scan-line"></div>
+              <div className={`w-full h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_14px_#38BDF8] animate-scan-line ${
+                lockedPlate ? (lockedPlate.alert ? 'via-red-500 shadow-[0_0_14px_#EF4444]' : 'via-emerald-400 shadow-[0_0_14px_#10B981]') : ''
+              }`}></div>
 
               {/* Target Reticle Footer */}
-              <div className="text-center text-[11px] text-blue-300/90 font-semibold tracking-wide">
-                Align Number Plate Inside Reticle
+              <div className={`text-center text-[11px] font-semibold tracking-wide ${
+                lockedPlate ? (lockedPlate.alert ? 'text-red-300 font-bold' : 'text-emerald-300 font-bold') : 'text-blue-300/90'
+              }`}>
+                {lockedPlate 
+                  ? (lockedPlate.alert ? '🚨 ALERT: STOLEN VEHICLE DETECTED' : '✅ SAVED IN VEHICLE REGISTRY')
+                  : 'Align Number Plate Inside Reticle'
+                }
               </div>
             </div>
           </div>
