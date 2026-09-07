@@ -48,9 +48,10 @@ export default function App() {
           <Route
             path="/scan"
             element={
-              <ProtectedRoute>
-                <MobileScanPage />
-              </ProtectedRoute>
+              <>
+                <Navbar />
+                <main className="pb-12"><MobileScanPage /></main>
+              </>
             }
           />
 

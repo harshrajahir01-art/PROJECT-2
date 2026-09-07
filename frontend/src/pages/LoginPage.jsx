@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { ShieldAlert, Lock, Mail, ArrowRight, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -152,6 +152,16 @@ export const LoginPage = () => {
                 <div className="text-[10px] text-gray-400">Admin Dashboard</div>
               </button>
             </div>
+          </div>
+
+          <div className="pt-2">
+            <Link
+              to="/scan"
+              className="w-full py-2.5 bg-slate-800/80 hover:bg-slate-700/80 text-blue-400 hover:text-blue-300 font-bold text-xs rounded-xl border border-slate-700/60 flex items-center justify-center space-x-2 transition-all"
+            >
+              <span>📸 Open Scanner Directly (No Sign In Required)</span>
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
 
           <div className="text-center text-[11px] text-gray-500">

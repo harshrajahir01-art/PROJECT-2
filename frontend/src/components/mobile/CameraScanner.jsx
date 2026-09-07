@@ -260,6 +260,9 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
     const file = e.target.files?.[0];
     if (!file || isProcessing) return;
 
+    // Reset input value so selecting the same file again triggers onChange
+    e.target.value = '';
+
     setIsProcessing(true);
     const formData = new FormData();
     formData.append('file', file);
@@ -519,8 +522,7 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
         <input
           type="file"
           ref={fileInputRef}
-          accept="image/*"
-          capture="environment"
+          accept="image/*,.jpg,.jpeg,.png,.webp"
           onChange={handleFileUpload}
           className="hidden"
         />

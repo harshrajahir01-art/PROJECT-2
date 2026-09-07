@@ -77,20 +77,31 @@ export const Navbar = () => {
 
           {/* User Profile & Logout */}
           <div className="hidden md:flex items-center space-x-4">
-            <div className="text-right">
-              <div className="text-sm font-semibold text-gray-200">{user?.full_name || 'Operator'}</div>
-              <div className="text-xs text-blue-400/90 font-mono flex items-center justify-end space-x-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
-                <span>{user?.role} • {user?.badge_number || 'ACTIVE'}</span>
-              </div>
-            </div>
-            <button
-              onClick={handleLogout}
-              title="Logout"
-              className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-950/30 border border-slate-800 hover:border-red-900 transition-colors"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
+            {user ? (
+              <>
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-gray-200">{user?.full_name || 'Operator'}</div>
+                  <div className="text-xs text-blue-400/90 font-mono flex items-center justify-end space-x-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
+                    <span>{user?.role} • {user?.badge_number || 'ACTIVE'}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  title="Logout"
+                  className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-950/30 border border-slate-800 hover:border-red-900 transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </>
+            ) : (
+              <Link
+                to="/login"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/30 transition-all"
+              >
+                Officer Sign In
+              </Link>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -114,21 +125,34 @@ export const Navbar = () => {
       {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-slate-800 bg-[#0E1526] px-4 pt-2 pb-4 space-y-1">
-          <div className="p-2 mb-2 bg-slate-900/80 rounded-lg border border-slate-800 flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <UserIcon className="h-4 w-4 text-blue-400" />
-              <div>
-                <div className="text-xs font-semibold text-gray-200">{user?.full_name}</div>
-                <div className="text-[10px] text-gray-400">{user?.role} ({user?.badge_number})</div>
+          {user ? (
+            <div className="p-2 mb-2 bg-slate-900/80 rounded-lg border border-slate-800 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <UserIcon className="h-4 w-4 text-blue-400" />
+                <div>
+                  <div className="text-xs font-semibold text-gray-200">{user?.full_name}</div>
+                  <div className="text-[10px] text-gray-400">{user?.role} ({user?.badge_number})</div>
+                </div>
               </div>
+              <button
+                onClick={handleLogout}
+                className="text-xs px-2.5 py-1 bg-red-950/80 text-red-400 border border-red-800 rounded font-medium"
+              >
+                Logout
+              </button>
             </div>
-            <button
-              onClick={handleLogout}
-              className="text-xs px-2.5 py-1 bg-red-950/80 text-red-400 border border-red-800 rounded font-medium"
-            >
-              Logout
-            </button>
-          </div>
+          ) : (
+            <div className="p-2 mb-2 bg-slate-900/80 rounded-lg border border-slate-800 flex items-center justify-between">
+              <span className="text-xs text-gray-400 font-medium">Guest / Field Scanner</span>
+              <Link
+                to="/login"
+                onClick={() => setMobileMenuOpen(false)}
+                className="text-xs px-3 py-1.5 bg-blue-600 text-white font-bold rounded-lg shadow"
+              >
+                Sign In
+              </Link>
+            </div>
+          )}
 
           {navItems.map((item) => {
             if (item.adminOnly && !isAdmin) return null;
