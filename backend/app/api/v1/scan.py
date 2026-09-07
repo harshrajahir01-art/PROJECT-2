@@ -2,6 +2,7 @@ import os
 import uuid
 import base64
 from datetime import datetime
+from typing import Optional
 import cv2
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
@@ -187,7 +188,7 @@ async def scan_vehicle_image(
     location_name: str = Form(None),
     source_device_id: str = Form(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_optional_user)
 ):
     """
     Process an uploaded camera image frame through the Computer Vision & OCR pipeline,
@@ -245,7 +246,7 @@ def scan_vehicle_base64(
     payload: ScanRequestBase64,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_optional_user)
 ):
     """
     Process base64-encoded image stream from mobile camera canvas.

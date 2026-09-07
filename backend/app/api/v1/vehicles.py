@@ -15,7 +15,7 @@ from app.schemas.detection import VehicleTimelineResponse, TimelinePoint
 from app.cv.normalizer import normalize_indian_plate
 from app.core.privacy import mask_owner_name, mask_phone_number
 from app.core.audit_logger import log_audit_event
-from app.api.deps import get_current_user, get_current_admin, get_current_operator_or_admin
+from app.api.deps import get_current_user, get_current_admin, get_current_operator_or_admin, get_optional_user
 
 router = APIRouter()
 
@@ -83,7 +83,7 @@ def check_vehicle_manual(
     payload: VehicleCheckRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_optional_user)
 ):
     """
     Manual text plate verification.
@@ -104,7 +104,7 @@ def check_vehicle_manual(
         location_name=payload.location_name or "Manual Checkpoint Entry",
         source_device_id=payload.source_device_id or "Manual_Search",
         client_ip=request.client.host if request.client else None,
-        created_by_user_id=current_user.id,
+        created_by_user_id=current_user.id if current_user else None,
         detected_at=datetime.utcnow()
     )
     db.add(detection_event)
@@ -113,7 +113,7 @@ def check_vehicle_manual(
     log_audit_event(
         db=db,
         action="MANUAL_PLATE_CHECK",
-        user_id=current_user.id,
+        user_id=current_user.id if current_user else None,
         resource_type="VEHICLE",
         resource_id=plate,
         ip_address=request.client.host if request.client else None,
