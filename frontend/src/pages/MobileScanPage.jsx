@@ -10,6 +10,7 @@ import {
 import api from '../api/client';
 
 export const MobileScanPage = () => {
+  const [scanResult, setScanResult] = useState(null);
   const [latestScan, setLatestScan] = useState(null);
   const [scanHistory, setScanHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -78,10 +79,11 @@ export const MobileScanPage = () => {
     fetchRecentDetections();
   }, [fetchRecentDetections]);
 
-  // When a plate is scanned via camera, simulation, or file upload
+  // When a plate is scanned via camera, simulation, or file upload: open confirmation page
   const handleScanComplete = (result) => {
     if (!result) return;
     setLatestScan(result);
+    setScanResult(result); // Open confirmation page
 
     if (result.success && result.registration_number) {
       setScanHistory((prev) => {
@@ -145,16 +147,20 @@ export const MobileScanPage = () => {
         };
         handleScanComplete(scanObj);
       } else {
-        setLatestScan({
+        const errObj = {
           success: false,
-          error_message: `Vehicle ${manualInput.toUpperCase()} could not be processed.`
-        });
+          error_message: `Vehicle ${manualInput.toUpperCase()} could not be found in database.`
+        };
+        setLatestScan(errObj);
+        setScanResult(errObj);
       }
     } catch (err) {
-      setLatestScan({
+      const errObj = {
         success: false,
         error_message: err.response?.data?.detail || "Failed to verify vehicle in database."
-      });
+      };
+      setLatestScan(errObj);
+      setScanResult(errObj);
     } finally {
       setIsProcessing(false);
     }
@@ -171,45 +177,70 @@ export const MobileScanPage = () => {
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <h1 className="text-xl font-black text-white tracking-tight">Real-Time ANPR Scanner</h1>
-              <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center space-x-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>LIVE FEED</span>
-              </span>
+              <h1 className="text-xl font-black text-white tracking-tight">
+                {scanResult ? 'Vehicle Verification Dossier' : 'Real-Time ANPR Scanner'}
+              </h1>
+              {!scanResult && (
+                <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center space-x-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>LIVE FEED</span>
+                </span>
+              )}
             </div>
-            <p className="text-xs text-gray-400">Continuous AI scanning — plates are automatically saved directly into the registry.</p>
+            <p className="text-xs text-gray-400">
+              {scanResult 
+                ? 'Review verified vehicle credentials, risk status, and actions.' 
+                : 'Continuous AI scanning — plates are automatically verified and saved directly into the registry.'}
+            </p>
           </div>
         </div>
 
-        {/* Tab Toggle (Camera vs Manual Entry) */}
-        <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
+        {/* Tab Toggle or Back to Scanner Button */}
+        {!scanResult ? (
+          <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
+            <button
+              onClick={() => setActiveTab('camera')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 ${
+                activeTab === 'camera'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Radio className="h-3.5 w-3.5" />
+              <span>Live Camera ANPR</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('manual')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 ${
+                activeTab === 'manual'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Search className="h-3.5 w-3.5" />
+              <span>Manual Entry</span>
+            </button>
+          </div>
+        ) : (
           <button
-            onClick={() => setActiveTab('camera')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 ${
-              activeTab === 'camera'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-gray-400 hover:text-white'
-            }`}
+            onClick={() => setScanResult(null)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center space-x-2"
           >
-            <Radio className="h-3.5 w-3.5" />
-            <span>Live Camera ANPR</span>
+            <Radio className="h-4 w-4" />
+            <span>SCAN ANOTHER VEHICLE</span>
           </button>
-          <button
-            onClick={() => setActiveTab('manual')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 ${
-              activeTab === 'manual'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <Search className="h-3.5 w-3.5" />
-            <span>Manual Entry</span>
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* Main Scanner Section (Camera stays permanently active) */}
-      {activeTab === 'camera' ? (
+      {/* Main Scanner Section or Confirmation Page */}
+      {scanResult ? (
+        <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
+          <ScanResultCard
+            result={scanResult}
+            onReset={() => setScanResult(null)}
+          />
+        </div>
+      ) : activeTab === 'camera' ? (
         <CameraScanner
           onScanComplete={handleScanComplete}
           isProcessing={isProcessing}
