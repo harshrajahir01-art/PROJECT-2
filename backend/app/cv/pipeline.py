@@ -77,47 +77,74 @@ class VehicleShieldCVPipeline:
 
         h, w = image_np.shape[:2]
 
-        # 1. First priority: Try contour-based plate crop
+        # Candidate A: Reticle focal region (center 80% width, center 55% height)
+        # Highly effective for on-screen plate videos, dashcams, and mobile scanning
+        rx1, rx2 = int(w * 0.10), int(w * 0.90)
+        ry1, ry2 = int(h * 0.20), int(h * 0.80)
+        reticle_crop = image_np[ry1:ry2, rx1:rx2]
+
+        # Candidate B: Morphological contour plate detection
         plate_crop, bbox, det_conf = self.detector.detect_plate(image_np)
-        
-        # 2. Check if contour is a valid plate aspect ratio
-        crop_to_run = plate_crop
-        crop_bbox = bbox
-        crop_conf = det_conf
 
-        if crop_to_run is None or crop_to_run.size == 0:
-            # Fallback to center optical reticle (center 70% width, center 40% height)
-            rx1, rx2 = int(w * 0.15), int(w * 0.85)
-            ry1, ry2 = int(h * 0.25), int(h * 0.75)
-            crop_to_run = image_np[ry1:ry2, rx1:rx2]
-            crop_bbox = {"x": rx1, "y": ry1, "width": rx2 - rx1, "height": ry2 - ry1}
-            crop_conf = 0.75
+        # Decide which candidate to test first
+        # If input image is already a plate crop (ar > 2.0 and not full frame), test it directly
+        ar = float(w) / float(max(h, 1))
+        if 1.8 <= ar <= 6.5 and h < 500:
+            candidates = [(image_np, {"x": 0, "y": 0, "width": w, "height": h}, 0.90)]
+        else:
+            candidates = []
+            if reticle_crop.size > 0:
+                candidates.append((reticle_crop, {"x": rx1, "y": ry1, "width": rx2 - rx1, "height": ry2 - ry1}, 0.85))
+            if plate_crop is not None and plate_crop.size > 0:
+                candidates.append((plate_crop, bbox, det_conf))
+            candidates.append((image_np, {"x": 0, "y": 0, "width": w, "height": h}, 0.70))
 
-        # Run Primary OCR pass on crop
-        raw_text, avg_conf, details = self.ocr.recognize_text(crop_to_run)
-        norm, score, conf, typ, detected_box = self._extract_best_plate_from_ocr(raw_text, avg_conf, details)
+        best_norm = None
+        best_score = -1.0
+        best_conf = 0.0
+        best_typ = "NONE"
+        best_raw = ""
+        best_crop_img = image_np
+        best_bbox = {"x": 0, "y": 0, "width": w, "height": h}
 
-        # If primary crop didn't find a valid plate and the input was a full image, try the full image once
-        if (not norm or score < 0.60) and (crop_to_run is not image_np) and max(h, w) <= 960:
-            raw_text_full, avg_conf_full, details_full = self.ocr.recognize_text(image_np)
-            norm_full, score_full, conf_full, typ_full, _ = self._extract_best_plate_from_ocr(raw_text_full, avg_conf_full, details_full)
-            if norm_full and score_full > (score or 0.0):
-                norm = norm_full
-                score = score_full
-                conf = conf_full
-                typ = typ_full
-                raw_text = raw_text_full
-                crop_to_run = image_np
+        # Run multi-candidate evaluation
+        for c_img, c_box, c_conf in candidates:
+            if c_img is None or c_img.size == 0:
+                continue
 
-        if not norm or score < 0.35:
+            raw_text, avg_conf, details = self.ocr.recognize_text(c_img, apply_enhancement=True)
+            norm, score, conf, typ, _ = self._extract_best_plate_from_ocr(raw_text, avg_conf, details)
+
+            if norm and score > best_score:
+                best_norm = norm
+                best_score = score
+                best_conf = conf
+                best_typ = typ
+                best_raw = raw_text
+                best_crop_img = c_img
+                best_bbox = c_box
+
+                # If we achieved a high-confidence structural plate match, break early for sub-second speed!
+                if score >= 0.85:
+                    break
+
+        if not best_norm or best_score < 0.35:
             return {
                 "success": False,
-                "error_message": "Could not recognize vehicle number plate. Please align the number plate inside the center reticle with good lighting and hold steady.",
-                "raw_text": raw_text,
+                "error_message": "Could not recognize vehicle number plate. Please align the number plate inside the center reticle and ensure it is clearly visible.",
+                "raw_text": best_raw,
                 "registration_number": None,
-                "ocr_confidence": round(conf, 3),
+                "ocr_confidence": round(best_conf, 3),
                 "plate_detection_confidence": 0.0
             }
+
+        norm = best_norm
+        score = best_score
+        conf = best_conf
+        typ = best_typ
+        raw_text = best_raw
+        crop_to_run = best_crop_img
+        crop_bbox = best_bbox
 
         # Save cropped plate image for audit / preview
         crop_filename = f"crop_{uuid.uuid4().hex[:12]}.jpg"

@@ -31,7 +31,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response && error.response.status === 401) {
       const reqUrl = error.config?.url || '';
-      const isPublicEndpoint = reqUrl.includes('/scan') || reqUrl.includes('/vehicles/check');
+      const isPublicEndpoint = reqUrl.includes('/scan') || reqUrl.includes('/vehicles/check') || reqUrl.includes('/detections');
       if (!window.location.pathname.includes('/login') && !isPublicEndpoint) {
         localStorage.removeItem('vs_token');
         localStorage.removeItem('vs_user');

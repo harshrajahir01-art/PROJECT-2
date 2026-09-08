@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.detection import DetectionEvent
 from app.schemas.detection import DetectionEventResponse
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_optional_user
 
 router = APIRouter()
 
@@ -17,7 +17,7 @@ def get_detection_events(
     limit: int = 50,
     skip: int = 0,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_optional_user)
 ):
     q = db.query(DetectionEvent)
     if registration_number:

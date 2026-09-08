@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { CameraScanner } from '../components/mobile/CameraScanner';
 import { ScanResultCard } from '../components/mobile/ScanResultCard';
@@ -12,22 +12,97 @@ import api from '../api/client';
 export const MobileScanPage = () => {
   const [latestScan, setLatestScan] = useState(null);
   const [scanHistory, setScanHistory] = useState([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [selectedVehicleForModal, setSelectedVehicleForModal] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [manualInput, setManualInput] = useState('');
   const [activeTab, setActiveTab] = useState('camera'); // 'camera' or 'manual'
 
-  // When a plate is scanned via camera or file upload
+  // Fetch recent detections from backend to populate feed below camera immediately
+  const fetchRecentDetections = useCallback(async () => {
+    setIsLoadingHistory(true);
+    try {
+      const cached = localStorage.getItem('vs_recent_scans');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setScanHistory(parsed);
+          }
+        } catch (e) {}
+      }
+
+      const res = await api.get('/detections?limit=30');
+      if (res.data && Array.isArray(res.data)) {
+        const formatted = res.data.map((d) => {
+          const isFlagged = ['STOLEN', 'WANTED', 'SUSPICIOUS'].includes(d.vehicle_status) ||
+                            ['HIGH', 'CRITICAL'].includes(d.risk_level);
+          return {
+            id: d.id,
+            success: true,
+            registration_number: d.registration_number,
+            ocr_confidence: d.ocr_confidence || 0.95,
+            plate_detection_confidence: d.plate_detection_confidence || 0.95,
+            is_registered: true,
+            saved_to_registry: true,
+            vehicle_id: d.vehicle_id,
+            vehicle_type: d.vehicle_type || 'Vehicle',
+            manufacturer: d.manufacturer || 'Standard',
+            model: d.model || '',
+            color: d.color || '',
+            status: d.vehicle_status || 'CLEAR',
+            risk_level: d.risk_level || 'LOW',
+            alert_triggered: isFlagged,
+            detected_at: d.detected_at,
+            location_name: d.location_name || 'Highway Checkpoint',
+            plate_crop_url: d.plate_crop_path || null,
+            recommended_action: isFlagged 
+              ? "🚨 CRITICAL: Flagged vehicle! Intercept immediately." 
+              : "Vehicle recorded clear. Stored directly in registry.",
+            instructions_to_officer: isFlagged ? "Detain vehicle and verify credentials." : "Standard passage recorded."
+          };
+        });
+        setScanHistory(formatted);
+        try {
+          localStorage.setItem('vs_recent_scans', JSON.stringify(formatted));
+        } catch (e) {}
+      }
+    } catch (err) {
+      console.warn("Could not fetch recent detections:", err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRecentDetections();
+  }, [fetchRecentDetections]);
+
+  // When a plate is scanned via camera, simulation, or file upload
   const handleScanComplete = (result) => {
     if (!result) return;
     setLatestScan(result);
 
     if (result.success && result.registration_number) {
       setScanHistory((prev) => {
-        // Prevent immediate duplicate in history feed
         const filtered = prev.filter((item) => item.registration_number !== result.registration_number);
-        return [result, ...filtered.slice(0, 24)]; // Keep latest 25 scans
+        const updated = [result, ...filtered.slice(0, 29)]; // Keep latest 30 scans
+        try {
+          localStorage.setItem('vs_recent_scans', JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
       });
+    }
+  };
+
+  const formatDetectedTime = (timeStr) => {
+    if (!timeStr) return 'Just now';
+    try {
+      const d = new Date(timeStr);
+      if (isNaN(d.getTime())) return 'Recently';
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch {
+      return 'Recently';
     }
   };
 
@@ -296,19 +371,33 @@ export const MobileScanPage = () => {
             </div>
           </div>
 
-          <Link
-            to="/vehicles"
-            className="text-xs font-bold text-blue-400 hover:text-blue-300 flex items-center space-x-1 transition-colors"
-          >
-            <span>Open Vehicle Registry Table</span>
-            <ExternalLink className="h-3.5 w-3.5" />
-          </Link>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={fetchRecentDetections}
+              disabled={isLoadingHistory}
+              title="Refresh Registry Feed"
+              className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-gray-400 hover:text-white border border-slate-800 transition-colors"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoadingHistory ? 'animate-spin text-blue-400' : ''}`} />
+            </button>
+            <Link
+              to="/vehicles"
+              className="text-xs font-bold text-blue-400 hover:text-blue-300 flex items-center space-x-1 transition-colors"
+            >
+              <span>Open Vehicle Registry Table</span>
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Link>
+          </div>
         </div>
 
         {scanHistory.length === 0 ? (
           <div className="py-8 text-center text-gray-500 text-xs space-y-2">
             <Car className="h-8 w-8 mx-auto text-gray-600 opacity-60" />
-            <div>Point camera at license plate to see live detections appear here in real time.</div>
+            <div>
+              {isLoadingHistory 
+                ? "Connecting to vehicle database registry..." 
+                : "Point camera at license plate or run Traffic Video Simulator to see live detections appear here."}
+            </div>
           </div>
         ) : (
           <div className="space-y-2.5">
@@ -353,7 +442,7 @@ export const MobileScanPage = () => {
                       {item.manufacturer || 'Vehicle'} {item.model || ''}
                       {item.color ? ` • ${item.color}` : ''}
                       <span className="text-gray-500 ml-2">
-                        {new Date(item.detected_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        {formatDetectedTime(item.detected_at)}
                       </span>
                     </div>
                   </div>

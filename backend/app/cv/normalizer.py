@@ -73,12 +73,12 @@ def normalize_indian_plate(raw_text: str) -> Tuple[Optional[str], float, str]:
     # 2. Extract potential plate candidate if extra text surrounds it (e.g. dealer frames or IND)
     target = cleaned
     if len(cleaned) > 10:
-        # Search for known 2-letter state code position
+        # Search for known 2-letter state code position (including OCR-confused digits like 6J -> GJ)
         for i in range(len(cleaned) - 7):
             candidate_state = cleaned[i:i+2]
-            if candidate_state in INDIAN_STATE_CODES:
-                # Take up to 10 chars from state code
-                target = cleaned[i:i+10]
+            fixed_cand = ''.join(DIGIT_TO_CHAR.get(c, c) for c in candidate_state)
+            if fixed_cand in INDIAN_STATE_CODES:
+                target = fixed_cand + cleaned[i+2:i+10]
                 break
 
     # 3. Standard Indian Plate Format: [State(2 chars)][RTO(1-2 digits)][Series(1-3 chars)][Number(4 digits)]
