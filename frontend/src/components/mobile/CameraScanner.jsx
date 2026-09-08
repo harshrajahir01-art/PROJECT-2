@@ -2,8 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { 
   Camera, Zap, ZapOff, RefreshCw, Upload, Crosshair, 
   AlertTriangle, CheckCircle2, ShieldAlert, Sparkles, Navigation,
-  Radio, Lock, CheckCircle, Play, Pause, Film, CloudFog, CloudRain,
-  Eye, Volume2
+  Radio, Lock, CheckCircle, Play, Pause, Film
 } from 'lucide-react';
 import api from '../../api/client';
 
@@ -17,9 +16,9 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
   const lastDetectedPlateRef = useRef(null);
   const lastDetectedTimeRef = useRef(0);
   const simAnimationRef = useRef(null);
+  const activeStreamRef = useRef(null);
 
   // Camera & Stream State
-  const [stream, setStream] = useState(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -137,32 +136,43 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
     }
   }, []);
 
-  // Stop current active media stream
+  // Stop current active media stream safely
   const stopCurrentStream = useCallback(() => {
     if (simAnimationRef.current) {
       cancelAnimationFrame(simAnimationRef.current);
       simAnimationRef.current = null;
     }
-    if (stream) {
-      stream.getTracks().forEach((t) => t.stop());
-      setStream(null);
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch (e) {}
+      });
+      activeStreamRef.current = null;
     }
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
     setCameraActive(false);
     setTorchOn(false);
-  }, [stream]);
+  }, []);
 
   // Start Physical Device Camera with multi-level constraint fallbacks
-  const startCamera = useCallback(async () => {
-    stopCurrentStream();
+  const startCamera = async () => {
     setCameraError(null);
     setPermissionDenied(false);
 
     if (!navigator?.mediaDevices?.getUserMedia) {
-      setCameraError("Camera API not accessible in this context. If using Chrome on localhost, ensure permissions are allowed.");
+      setCameraError('Camera API not accessible in this context. Use localhost or HTTPS.');
       return;
+    }
+
+    // Stop existing camera track if running
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach((t) => {
+        try { t.stop(); } catch (e) {}
+      });
+      activeStreamRef.current = null;
     }
 
     try {
@@ -193,19 +203,19 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
         }
       }
 
-      setStream(mediaStream);
+      activeStreamRef.current = mediaStream;
 
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
         videoRef.current.muted = true;
+        videoRef.current.playsInline = true;
         try {
           await videoRef.current.play();
-          setCameraActive(true);
         } catch (playErr) {
-          console.warn("Video play error (requires user interaction):", playErr);
-          // Wait for user gesture on the viewfinder
+          console.warn('Video play waiting for user interaction:', playErr);
         }
       }
+      setCameraActive(true);
 
       // Check torch capabilities
       const videoTrack = mediaStream.getVideoTracks()[0];
@@ -214,19 +224,23 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
         setTorchSupported(true);
       }
     } catch (err) {
-      console.error("Camera access error:", err);
+      console.error('Camera access error:', err);
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         setPermissionDenied(true);
-        setCameraError("Camera permission was blocked. Click the lock 🔒 icon in your browser address bar and allow camera access.");
+        setCameraError('Camera permission was blocked. Click the lock 🔒 icon in your browser address bar and select Allow.');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setCameraError('No camera hardware found on this device. You can test using the Traffic Video Simulator.');
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        setCameraError('Camera is currently in use by another app (Zoom, Teams, etc.). Please close other apps and try again.');
       } else {
-        setCameraError("Camera hardware unavailable or currently in use by another application.");
+        setCameraError(err.message || 'Failed to initialize camera.');
       }
       setCameraActive(false);
     }
-  }, [facingMode, stopCurrentStream]);
+  };
 
-  // Start Real-Time Traffic Stream Simulator (with Canvas rendering & captureStream)
-  const startTrafficSimulation = useCallback(() => {
+  // Start Real-Time Traffic Stream Simulator (visible directly in viewport canvas)
+  const startTrafficSimulation = () => {
     stopCurrentStream();
     setCameraError(null);
     setPermissionDenied(false);
@@ -239,7 +253,7 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
     const ctx = canvas.getContext('2d');
 
     const scenario = simulationScenarios[activeScenarioIdx];
-    let carProgress = 0; // 0 to 1
+    let carProgress = 0.05;
     let roadStripeOffset = 0;
     let fogParticles = Array.from({ length: 28 }, () => ({
       x: Math.random() * canvas.width,
@@ -302,12 +316,11 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
       ctx.setLineDash([]);
 
       // 2. Animate Approaching Vehicle
-      carProgress += 0.007; // Speed of approach
-      if (carProgress > 1.3) {
-        carProgress = 0.05; // Reset loop for continuous scanning
+      carProgress += 0.007;
+      if (carProgress > 1.25) {
+        carProgress = 0.05;
       }
 
-      // Smooth perspective scale (from 0.2 to 1.1)
       const scale = 0.2 + Math.pow(carProgress, 1.8) * 0.95;
       const carY = canvas.height * 0.45 + (canvas.height * 0.48) * carProgress;
       const carX = canvas.width * 0.5;
@@ -409,10 +422,9 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
 
       // 3. Render Adverse Weather Effects (Mist, Fog, Rain)
       if (scenario.weather === 'fog') {
-        ctx.fillStyle = 'rgba(148, 163, 184, 0.35)'; // Ambient fog veil
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.35)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Moving Fog Clouds
         fogParticles.forEach((p) => {
           p.x = (p.x + p.speedX) % (canvas.width + 100);
           ctx.fillStyle = `rgba(226, 232, 240, ${p.alpha})`;
@@ -444,60 +456,41 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
       ctx.fillStyle = '#38bdf8';
       ctx.font = 'bold 12px monospace';
       ctx.textAlign = 'left';
-      ctx.fillText(`SIMULATED TRAFFIC STREAM: ${scenario.name.toUpperCase()}`, 24, 34);
+      ctx.fillText(`SIMULATED TRAFFIC: ${scenario.name.toUpperCase()}`, 24, 34);
       ctx.fillStyle = '#94a3b8';
       ctx.font = '11px monospace';
-      ctx.fillText(`SPEED: ${scenario.speed} • ATMOSPHERE: ${scenario.weather.toUpperCase()} • PLATE: ${scenario.plate}`, 24, 52);
+      ctx.fillText(`SPEED: ${scenario.speed} • WEATHER: ${scenario.weather.toUpperCase()} • ${scenario.plate}`, 24, 52);
 
       simAnimationRef.current = requestAnimationFrame(renderSimulationFrame);
     };
 
     renderSimulationFrame();
+    setCameraActive(true);
+  };
 
-    // Pipe the animated canvas into the video element
-    try {
-      if (canvas.captureStream) {
-        const simStream = canvas.captureStream(30);
-        setStream(simStream);
-        if (videoRef.current) {
-          videoRef.current.srcObject = simStream;
-          videoRef.current.muted = true;
-          videoRef.current.play().catch((e) => console.warn("Sim stream play:", e));
-        }
-        setCameraActive(true);
-      } else {
-        // Fallback: flag camera as active so scan loop captures from simCanvas
-        setCameraActive(true);
-      }
-    } catch (e) {
-      console.warn("captureStream error, falling back to direct canvas capture:", e);
-      setCameraActive(true);
-    }
-  }, [activeScenarioIdx, stopCurrentStream]);
-
-  // Handle Feed Mode switching
+  // Safe Lifecycle: Attempt auto-start on mount or when mode/facing changes
   useEffect(() => {
-    if (feedMode === 'simulation') {
-      startTrafficSimulation();
-    } else {
+    if (feedMode === 'camera') {
       startCamera();
+    } else {
+      startTrafficSimulation();
     }
     return () => {
       stopCurrentStream();
     };
-  }, [feedMode, startCamera, startTrafficSimulation, stopCurrentStream]);
+  }, [feedMode, facingMode]);
 
-  // Restart simulation when scenario changes
+  // Restart simulation when scenario index changes
   useEffect(() => {
     if (feedMode === 'simulation') {
       startTrafficSimulation();
     }
-  }, [activeScenarioIdx, feedMode, startTrafficSimulation]);
+  }, [activeScenarioIdx]);
 
   // Flashlight toggle
   const toggleTorch = async () => {
-    if (!stream || feedMode === 'simulation') return;
-    const track = stream.getVideoTracks()[0];
+    if (!activeStreamRef.current || feedMode === 'simulation') return;
+    const track = activeStreamRef.current.getVideoTracks()[0];
     try {
       const newStatus = !torchOn;
       await track.applyConstraints({
@@ -505,7 +498,7 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
       });
       setTorchOn(newStatus);
     } catch (err) {
-      console.warn("Torch toggle failed:", err);
+      console.warn('Torch toggle failed:', err);
     }
   };
 
@@ -518,25 +511,27 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
   const captureAndScan = useCallback(async (isAuto = false) => {
     if (isScanningFrameRef.current) return;
     
-    // Choose video or simCanvas as source
-    const video = videoRef.current;
-    const simCanvas = simCanvasRef.current;
-    const canvas = canvasRef.current;
-
+    let sourceElement = null;
     let sourceW = 0;
     let sourceH = 0;
-    let sourceElement = null;
 
-    if (feedMode === 'simulation' && simCanvas) {
-      sourceElement = simCanvas;
-      sourceW = simCanvas.width;
-      sourceH = simCanvas.height;
-    } else if (video && video.readyState >= 2) {
-      sourceElement = video;
-      sourceW = video.videoWidth || 640;
-      sourceH = video.videoHeight || 480;
+    if (feedMode === 'simulation') {
+      const simCanvas = simCanvasRef.current;
+      if (simCanvas && simCanvas.width > 0) {
+        sourceElement = simCanvas;
+        sourceW = simCanvas.width;
+        sourceH = simCanvas.height;
+      }
+    } else {
+      const video = videoRef.current;
+      if (video && video.readyState >= 2) {
+        sourceElement = video;
+        sourceW = video.videoWidth || 640;
+        sourceH = video.videoHeight || 480;
+      }
     }
 
+    const canvas = canvasRef.current;
     if (!sourceElement || !canvas || sourceW === 0 || sourceH === 0) return;
 
     isScanningFrameRef.current = true;
@@ -548,8 +543,7 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
 
     try {
       // Reticle Optical Center-Crop:
-      // When users or cameras target a vehicle or computer screen, the plate is centered.
-      // Cropping the central 85% width x 55% height eliminates room reflections and magnifies plate characters.
+      // Cropping the central 85% width x 55% height eliminates reflections and magnifies plate characters
       const cropW = Math.round(sourceW * 0.85);
       const cropH = Math.round(sourceH * 0.55);
       const cropX = Math.round((sourceW - cropW) / 2);
@@ -602,11 +596,11 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
         }
       }
     } catch (err) {
-      console.error("Scan error:", err);
+      console.error('Scan error:', err);
       if (!isAuto) {
         onScanComplete({
           success: false,
-          error_message: err.response?.data?.detail || "Network error while processing scan. Please try again."
+          error_message: err.response?.data?.detail || 'Network error while processing scan. Please try again.'
         });
       }
     } finally {
@@ -631,7 +625,7 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
       if (cameraActive && !isScanningFrameRef.current) {
         captureAndScan(true);
       }
-    }, 900); // Rapid 900ms scan cycle
+    }, 900);
 
     return () => {
       if (realtimeTimerRef.current) {
@@ -664,10 +658,10 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
       }
       onScanComplete(res.data);
     } catch (err) {
-      console.error("File upload scan error:", err);
+      console.error('File upload scan error:', err);
       onScanComplete({
         success: false,
-        error_message: err.response?.data?.detail || "Could not process image file."
+        error_message: err.response?.data?.detail || 'Could not process image file.'
       });
     } finally {
       setIsProcessing(false);
@@ -676,9 +670,8 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
 
   return (
     <div className="flex flex-col items-center w-full max-w-lg mx-auto space-y-4">
-      {/* Hidden Working Canvases */}
+      {/* Hidden Offscreen Canvas for Frame Capture */}
       <canvas ref={canvasRef} className="hidden" />
-      <canvas ref={simCanvasRef} className="hidden" />
 
       {/* Feed Source Mode Switcher */}
       <div className="w-full flex bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800 shadow-md">
@@ -743,7 +736,13 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
       {/* Main Viewport Container */}
       <div className="relative w-full aspect-[4/3] bg-black rounded-2xl overflow-hidden border-2 border-slate-800 shadow-2xl flex items-center justify-center">
         
-        {/* Real Live Video Feed Element (Always rendered in DOM) */}
+        {/* Visible Canvas for Traffic Video Simulation */}
+        <canvas
+          ref={simCanvasRef}
+          className={`w-full h-full object-cover absolute inset-0 z-0 ${feedMode === 'simulation' ? 'block' : 'hidden'}`}
+        />
+
+        {/* Real Live Video Feed Element */}
         <video
           ref={videoRef}
           autoPlay
@@ -756,18 +755,18 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
             }
           }}
           onPlaying={() => setCameraActive(true)}
-          className="w-full h-full object-cover absolute inset-0 z-0"
+          className={`w-full h-full object-cover absolute inset-0 z-0 ${feedMode === 'camera' ? 'block' : 'hidden'}`}
         />
 
         {/* Permission Denied Notice */}
-        {permissionDenied && (
+        {feedMode === 'camera' && permissionDenied && (
           <div className="p-6 text-center text-gray-300 space-y-3 z-20 max-w-xs bg-slate-950/90 rounded-2xl border border-red-500/40">
             <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 mx-auto flex items-center justify-center">
               <Lock className="h-6 w-6" />
             </div>
             <div className="text-sm font-bold text-white">Camera Access Required</div>
             <p className="text-xs text-gray-400 leading-relaxed">
-              Please click the <strong>Lock (🔒)</strong> or <strong>Camera icon</strong> in your browser's address bar at the top, select <strong>"Allow"</strong>, then tap below:
+              Please click the <strong>Lock (🔒)</strong> or <strong>Camera icon</strong> in your browser address bar at the top, select <strong>Allow</strong>, then tap below:
             </p>
             <div className="space-y-2 pt-1">
               <button
@@ -786,47 +785,33 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
           </div>
         )}
 
-        {/* Camera Inactive / Tap to Start Overlay */}
-        {!cameraActive && !permissionDenied && (
+        {/* Camera Inactive / Tap to Start Overlay (When Camera is not streaming yet) */}
+        {feedMode === 'camera' && !cameraActive && !permissionDenied && (
           <div className="absolute inset-0 z-20 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center space-y-4">
             <div className="w-16 h-16 rounded-2xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center shadow-lg animate-pulse">
               <Camera className="h-8 w-8" />
             </div>
             <div className="space-y-1 max-w-xs">
-              <h3 className="text-sm font-bold text-white">
-                {feedMode === 'simulation' ? 'Traffic Video Ready' : 'Camera Feed Ready'}
-              </h3>
+              <h3 className="text-sm font-bold text-white">Camera Ready to Start</h3>
               <p className="text-xs text-gray-400">
-                {cameraError || "Tap below to activate real-time ANPR scanner."}
+                {cameraError || 'Tap below to activate physical camera feed & real-time ANPR.'}
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-2 w-full max-w-xs">
-              {feedMode === 'camera' ? (
-                <>
-                  <button
-                    onClick={startCamera}
-                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 flex items-center justify-center space-x-2 transition-all"
-                  >
-                    <Camera className="h-4 w-4" />
-                    <span>START CAMERA FEED</span>
-                  </button>
-                  <button
-                    onClick={() => setFeedMode('simulation')}
-                    className="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold text-xs rounded-xl border border-cyan-500/30 flex items-center justify-center space-x-2 transition-all"
-                  >
-                    <Film className="h-4 w-4" />
-                    <span>TRAFFIC SIM</span>
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={startTrafficSimulation}
-                  className="w-full py-3 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-600/30 flex items-center justify-center space-x-2 transition-all"
-                >
-                  <Play className="h-4 w-4 fill-white" />
-                  <span>START TRAFFIC STREAM</span>
-                </button>
-              )}
+              <button
+                onClick={startCamera}
+                className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 flex items-center justify-center space-x-2 transition-all active:scale-95"
+              >
+                <Camera className="h-4 w-4" />
+                <span>START CAMERA FEED</span>
+              </button>
+              <button
+                onClick={() => setFeedMode('simulation')}
+                className="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold text-xs rounded-xl border border-cyan-500/30 flex items-center justify-center space-x-2 transition-all"
+              >
+                <Film className="h-4 w-4" />
+                <span>TRAFFIC SIM</span>
+              </button>
             </div>
           </div>
         )}
