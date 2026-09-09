@@ -54,7 +54,7 @@ app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads"
 # Mount API Router
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
-@app.get("/api/health", tags=["System Health"])
+@app.api_route("/api/health", methods=["GET", "HEAD"], tags=["System Health"])
 def health_check():
     return {
         "status": "HEALTHY",
@@ -64,7 +64,7 @@ def health_check():
         "ai_engine": "EASYOCR_OPENCV_ACTIVE"
     }
 
-@app.get("/", tags=["Root"])
+@app.api_route("/", methods=["GET", "HEAD"], tags=["Root"])
 def root():
     return {
         "message": "VehicleShield API is operational. Visit /docs for OpenAPI documentation.",
