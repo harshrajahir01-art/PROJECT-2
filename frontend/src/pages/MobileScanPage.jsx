@@ -201,7 +201,16 @@ export const MobileScanPage = () => {
         }
       } catch (err) {
         console.error("Photo scan error:", err);
-        setPhotoError(err.response?.data?.detail || "Network error while uploading photo to OCR engine.");
+        let detail = err.response?.data?.detail;
+        if (!detail) {
+          const isRemoteHost = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+          if (isRemoteHost && !import.meta.env.VITE_API_URL) {
+            detail = "Backend URL not configured on public host. Please set VITE_API_URL in Netlify environment variables pointing to your backend.";
+          } else {
+            detail = "Network error connecting to backend. If your backend is hosted on a free tier (like Render), it may be waking up from sleep (~50s). Please wait a moment and try again.";
+          }
+        }
+        setPhotoError(detail);
       } finally {
         setIsProcessing(false);
       }

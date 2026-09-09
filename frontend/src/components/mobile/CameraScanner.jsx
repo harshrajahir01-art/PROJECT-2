@@ -598,9 +598,18 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
     } catch (err) {
       console.error('Scan error:', err);
       if (!isAuto) {
+        let detail = err.response?.data?.detail;
+        if (!detail) {
+          const isRemoteHost = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+          if (isRemoteHost && !import.meta.env.VITE_API_URL) {
+            detail = 'Backend URL not configured on public host. Set VITE_API_URL in your hosting settings (e.g. Netlify) pointing to your public Render backend URL.';
+          } else {
+            detail = 'Network error connecting to backend. If your backend is hosted on a free tier (like Render), it may be waking up from sleep (~50s). Please wait a moment and try again.';
+          }
+        }
         onScanComplete({
           success: false,
-          error_message: err.response?.data?.detail || 'Network error while processing scan. Please try again.'
+          error_message: detail
         });
       }
     } finally {
