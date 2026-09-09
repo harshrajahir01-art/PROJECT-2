@@ -54,6 +54,15 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
 };
 
 export default function App() {
+  React.useEffect(() => {
+    // Silent warm-up ping to wake up cloud backend (prevents Render free-tier cold starts)
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL;
+      const target = apiUrl ? `${apiUrl.replace(/\/$/, '')}/api/health` : '/api/health';
+      fetch(target, { method: 'GET', mode: 'cors', keepalive: true }).catch(() => {});
+    } catch (e) {}
+  }, []);
+
   return (
     <ThemeProvider>
       <AuthProvider>
