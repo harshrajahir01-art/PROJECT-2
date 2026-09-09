@@ -396,9 +396,14 @@ export const MobileScanPage = () => {
           )}
 
           {isProcessing && (
-            <div className="p-4 rounded-xl bg-blue-950/60 border border-blue-800 flex items-center justify-center space-x-3 text-xs text-blue-200">
-              <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-              <span>Processing high-resolution OCR & saving to database...</span>
+            <div className="p-4 rounded-xl bg-blue-950/60 border border-blue-800 text-center space-y-1 text-xs text-blue-200">
+              <div className="flex items-center justify-center space-x-2 font-bold text-blue-300">
+                <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                <span>Processing high-resolution OCR & saving to database...</span>
+              </div>
+              <div className="text-[11px] text-gray-400">
+                Free servers (Render) take 40–50s on the first scan to spin up the AI container. Please wait...
+              </div>
             </div>
           )}
         </div>

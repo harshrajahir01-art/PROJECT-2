@@ -982,9 +982,30 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
           disabled={!cameraActive || isProcessing}
           className="w-full py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-sm tracking-wide rounded-xl shadow-xl shadow-blue-600/30 flex items-center justify-center space-x-2 transition-all disabled:opacity-50"
         >
-          <Camera className="h-5 w-5" />
-          <span>{isProcessing ? 'ANALYZING LICENSE PLATE...' : 'CAPTURE & SCAN NOW'}</span>
+          {isProcessing ? (
+            <>
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              <span>ANALYZING LICENSE PLATE...</span>
+            </>
+          ) : (
+            <>
+              <Camera className="h-5 w-5" />
+              <span>CAPTURE & SCAN NOW</span>
+            </>
+          )}
         </button>
+
+        {isProcessing && (
+          <div className="p-3 bg-blue-950/60 border border-blue-500/30 rounded-xl text-center space-y-1 animate-pulse">
+            <div className="flex items-center justify-center space-x-2 text-xs font-bold text-blue-300">
+              <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
+              <span>AI Neural OCR Running...</span>
+            </div>
+            <div className="text-[11px] text-gray-400">
+              Free cloud servers (Render) take 40–50s on the first scan to boot EasyOCR. Please keep this screen open.
+            </div>
+          </div>
+        )}
 
         {/* Upload Fallback File Button */}
         <input
