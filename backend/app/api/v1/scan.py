@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
-from app.models.vehicle import Vehicle, VehicleStatus, RiskLevel
+from app.models.vehicle import Vehicle, VehicleStatus, RiskLevel, VehicleType
 from app.models.detection import DetectionEvent
 from app.models.alert import Alert, AlertSeverity, AlertStatus
 from app.schemas.scan import ScanResult, ScanRequestBase64

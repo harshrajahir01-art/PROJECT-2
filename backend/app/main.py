@@ -5,8 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.api.v1 import api_router
-from app.database import engine, Base
+from app.database import engine, Base, SessionLocal
 from app.seed.seed_data import seed_database
+from app.seed.rto_data import seed_rto_data
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -16,6 +17,14 @@ async def lifespan(app: FastAPI):
         seed_database()
     except Exception as e:
         print(f"[WARN] Startup seed message: {e}")
+    try:
+        db = SessionLocal()
+        try:
+            seed_rto_data(db)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[WARN] RTO seed error: {e}")
     yield
     # Shutdown logic if any
 

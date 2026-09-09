@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1 import auth, scan, vehicles, detections, alerts, dashboard, audit
+from app.api.v1 import auth, scan, vehicles, detections, alerts, dashboard, audit, rto
 
 api_router = APIRouter()
 
@@ -10,3 +10,6 @@ api_router.include_router(detections.router, prefix="/detections", tags=["Detect
 api_router.include_router(alerts.router, prefix="/alerts", tags=["Security Alerts"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard Analytics"])
 api_router.include_router(audit.router, prefix="/audit", tags=["Audit Logs"])
+api_router.include_router(rto.router, prefix="/rto", tags=["Indian RTO & Plate Explorer"])
+api_router.include_router(rto.router, prefix="", tags=["Indian RTO & Plate Explorer Direct"])
+
