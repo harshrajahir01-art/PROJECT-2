@@ -635,36 +635,48 @@ export const CameraScanner = ({ onScanComplete, isProcessing, setIsProcessing })
     };
   }, [isRealtime, cameraActive, captureAndScan]);
 
-  // File Upload Fallback
+  // File Upload Fallback with Rock-Solid Base64 transport
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file || isProcessing) return;
     e.target.value = '';
 
     setIsProcessing(true);
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('latitude', gpsLocation?.lat || 23.0225);
-    formData.append('longitude', gpsLocation?.lng || 72.5714);
-    formData.append('location_name', scanLocationName);
-    formData.append('source_device_id', 'MOBILE_FILE_UPLOAD');
-
     try {
-      const res = await api.post('/scan', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      if (res.data.success) {
-        playChime(res.data.alert_triggered);
-      }
-      onScanComplete(res.data);
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64Data = reader.result;
+          const payload = {
+            image_base64: base64Data,
+            latitude: gpsLocation?.lat || 23.0225,
+            longitude: gpsLocation?.lng || 72.5714,
+            location_name: scanLocationName || 'Field Photo Upload',
+            source_device_id: 'MOBILE_PHOTO_UPLOAD'
+          };
+          const res = await api.post('/scan/base64', payload);
+          if (res.data.success) {
+            playChime(res.data.alert_triggered);
+          }
+          onScanComplete(res.data);
+        } catch (err) {
+          console.error('File upload scan error:', err);
+          onScanComplete({
+            success: false,
+            error_message: err.response?.data?.detail || 'Could not recognize license plate from image.'
+          });
+        } finally {
+          setIsProcessing(false);
+        }
+      };
+      reader.onerror = () => {
+        setIsProcessing(false);
+        onScanComplete({ success: false, error_message: 'Failed to read file from device.' });
+      };
+      reader.readAsDataURL(file);
     } catch (err) {
-      console.error('File upload scan error:', err);
-      onScanComplete({
-        success: false,
-        error_message: err.response?.data?.detail || 'Could not process image file.'
-      });
-    } finally {
       setIsProcessing(false);
+      console.error('File read error:', err);
     }
   };
 

@@ -5,7 +5,7 @@ import { ScanResultCard } from '../components/mobile/ScanResultCard';
 import { 
   ShieldAlert, ShieldCheck, AlertTriangle, AlertOctagon, 
   Search, ExternalLink, CheckCircle2, Database, Clock, 
-  Car, Eye, X, RefreshCw, Radio
+  Car, Eye, X, RefreshCw, Radio, Upload, Sparkles, Image as ImageIcon
 } from 'lucide-react';
 import api from '../api/client';
 
@@ -17,7 +17,10 @@ export const MobileScanPage = () => {
   const [selectedVehicleForModal, setSelectedVehicleForModal] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [manualInput, setManualInput] = useState('');
-  const [activeTab, setActiveTab] = useState('camera'); // 'camera' or 'manual'
+  const [activeTab, setActiveTab] = useState('camera'); // 'camera', 'upload', 'manual'
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoError, setPhotoError] = useState(null);
+  const photoInputRef = React.useRef(null);
 
   // Fetch recent detections from backend to populate feed below camera immediately
   const fetchRecentDetections = useCallback(async () => {
@@ -166,31 +169,84 @@ export const MobileScanPage = () => {
     }
   };
 
+  // Handler for direct photo file upload
+  const handlePhotoFileSelected = (file) => {
+    if (!file) return;
+    setPhotoError(null);
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result;
+      setPhotoPreview(base64);
+      setIsProcessing(true);
+
+      try {
+        const payload = {
+          image_base64: base64,
+          latitude: 23.0225,
+          longitude: 72.5714,
+          location_name: "Field Inspection Photo Upload",
+          source_device_id: "MOBILE_WEB_UPLOAD"
+        };
+        const res = await api.post('/scan/base64', payload);
+        if (res.data.success && res.data.registration_number) {
+          handleScanComplete(res.data);
+        } else {
+          setPhotoError(res.data.error_message || "Could not recognize an Indian license plate in this image. Ensure the number plate is sharp and clearly visible.");
+          const errScan = {
+            success: false,
+            error_message: res.data.error_message || "Plate not recognized in photo."
+          };
+          setLatestScan(errScan);
+        }
+      } catch (err) {
+        console.error("Photo scan error:", err);
+        setPhotoError(err.response?.data?.detail || "Network error while uploading photo to OCR engine.");
+      } finally {
+        setIsProcessing(false);
+      }
+    };
+    reader.onerror = () => {
+      setPhotoError("Failed to read image file from your device.");
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
       
       {/* Top Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#111827] p-4 rounded-2xl border border-slate-800 shadow-lg">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
         <div className="flex items-center space-x-3">
-          <div className="p-2.5 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30">
-            <ShieldAlert className="h-6 w-6" />
+          <div className={`p-2.5 rounded-2xl ${
+            scanResult 
+              ? scanResult.alert_triggered 
+                ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
+                : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+              : 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+          }`}>
+            {scanResult ? (
+              scanResult.alert_triggered ? <AlertOctagon className="h-6 w-6 text-red-400 animate-pulse" /> : <ShieldCheck className="h-6 w-6 text-emerald-400" />
+            ) : (
+              <ShieldAlert className="h-6 w-6 text-blue-400" />
+            )}
           </div>
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-xl font-black text-white tracking-tight">
-                {scanResult ? 'Vehicle Verification Dossier' : 'Real-Time ANPR Scanner'}
+                {scanResult ? 'Vehicle Verification Dossier' : 'Vehicle ANPR Scanner & Registry'}
               </h1>
               {!scanResult && (
                 <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center space-x-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span>LIVE FEED</span>
+                  <span>READY</span>
                 </span>
               )}
             </div>
             <p className="text-xs text-gray-400">
               {scanResult 
                 ? 'Review verified vehicle credentials, risk status, and actions.' 
-                : 'Continuous AI scanning — plates are automatically verified and saved directly into the registry.'}
+                : 'Scan live feed or upload vehicle photo — plates are automatically verified and saved directly into the database.'}
             </p>
           </div>
         </div>
@@ -200,30 +256,46 @@ export const MobileScanPage = () => {
           <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
             <button
               onClick={() => setActiveTab('camera')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 ${
                 activeTab === 'camera'
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-gray-400 hover:text-white'
               }`}
             >
               <Radio className="h-3.5 w-3.5" />
-              <span>Live Camera ANPR</span>
+              <span>Camera</span>
             </button>
+
+            <button
+              onClick={() => setActiveTab('upload')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 ${
+                activeTab === 'upload'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              <span>Upload Photo</span>
+            </button>
+
             <button
               onClick={() => setActiveTab('manual')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 ${
                 activeTab === 'manual'
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-gray-400 hover:text-white'
               }`}
             >
               <Search className="h-3.5 w-3.5" />
-              <span>Manual Entry</span>
+              <span>Manual</span>
             </button>
           </div>
         ) : (
           <button
-            onClick={() => setScanResult(null)}
+            onClick={() => {
+              setScanResult(null);
+              setPhotoPreview(null);
+            }}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center space-x-2"
           >
             <Radio className="h-4 w-4" />
@@ -237,7 +309,10 @@ export const MobileScanPage = () => {
         <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
           <ScanResultCard
             result={scanResult}
-            onReset={() => setScanResult(null)}
+            onReset={() => {
+              setScanResult(null);
+              setPhotoPreview(null);
+            }}
           />
         </div>
       ) : activeTab === 'camera' ? (
@@ -246,6 +321,78 @@ export const MobileScanPage = () => {
           isProcessing={isProcessing}
           setIsProcessing={setIsProcessing}
         />
+      ) : activeTab === 'upload' ? (
+        /* Dedicated Photo Upload Dropzone */
+        <div className="max-w-lg mx-auto bg-[#111827] p-6 sm:p-8 rounded-3xl border border-slate-800 shadow-2xl space-y-6">
+          <div className="text-center space-y-2">
+            <h2 className="text-lg font-bold text-white flex items-center justify-center space-x-2">
+              <Upload className="h-5 w-5 text-blue-400" />
+              <span>Upload Vehicle Photo for OCR</span>
+            </h2>
+            <p className="text-xs text-gray-400">
+              Select or drop any car or license plate image. The AI OCR pipeline will automatically read the plate and record it in the registry database.
+            </p>
+          </div>
+
+          <input
+            type="file"
+            ref={photoInputRef}
+            accept="image/*,.jpg,.jpeg,.png,.webp"
+            onChange={(e) => handlePhotoFileSelected(e.target.files?.[0])}
+            className="hidden"
+          />
+
+          <div
+            onClick={() => photoInputRef.current?.click()}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              handlePhotoFileSelected(e.dataTransfer.files?.[0]);
+            }}
+            className="border-2 border-dashed border-slate-700 hover:border-blue-500 bg-slate-900/60 hover:bg-slate-900 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all space-y-4 text-center group"
+          >
+            {photoPreview ? (
+              <div className="space-y-3 w-full">
+                <img
+                  src={photoPreview}
+                  alt="Selected vehicle"
+                  className="max-h-52 mx-auto rounded-xl border border-slate-700 object-contain shadow-lg"
+                />
+                <span className="text-xs text-blue-400 font-bold block">
+                  Click to choose a different photo
+                </span>
+              </div>
+            ) : (
+              <>
+                <div className="w-16 h-16 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                  <ImageIcon className="h-8 w-8" />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-sm font-bold text-white block">
+                    Click to browse or drag & drop vehicle photo
+                  </span>
+                  <span className="text-xs text-gray-500 block">
+                    Supports JPG, PNG, WEBP high-resolution photos
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {photoError && (
+            <div className="p-3.5 rounded-xl bg-red-950/60 border border-red-800 text-red-300 text-xs flex items-start space-x-2">
+              <AlertTriangle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+              <span>{photoError}</span>
+            </div>
+          )}
+
+          {isProcessing && (
+            <div className="p-4 rounded-xl bg-blue-950/60 border border-blue-800 flex items-center justify-center space-x-3 text-xs text-blue-200">
+              <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+              <span>Processing high-resolution OCR & saving to database...</span>
+            </div>
+          )}
+        </div>
       ) : (
         /* Manual Search Mode */
         <div className="max-w-lg mx-auto bg-[#111827] p-6 rounded-2xl border border-slate-800 shadow-xl space-y-4">
