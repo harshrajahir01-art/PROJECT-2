@@ -27,10 +27,6 @@ class PlateDetector:
         aspect = float(w) / float(max(h, 1))
         candidates: List[Tuple[float, np.ndarray, Dict[str, Any]]] = []
 
-        # If already a tight plate crop
-        if 2.0 <= aspect <= 6.5 and h < 500 and w < 1200:
-            candidates.append((0.95, image, {"x": 0, "y": 0, "width": w, "height": h}))
-
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
 
         # Method 1: High-contrast plate candidate detection (white/yellow/green plates)
