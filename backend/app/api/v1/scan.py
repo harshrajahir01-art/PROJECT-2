@@ -18,6 +18,32 @@ from app.cv.normalizer import normalize_indian_plate
 from app.core.audit_logger import log_audit_event
 from app.api.deps import get_current_user, get_optional_user
 from app.config import settings
+from app.seed.rto_data import STATES_DATA, RTO_OFFICES_DATA
+
+STATE_NAME_BY_CODE = {s["code"]: s["name"] for s in STATES_DATA}
+RTO_BY_CODE = {r["rto_code"]: r for r in RTO_OFFICES_DATA}
+
+def resolve_registered_rto(plate: str) -> tuple[str, str]:
+    """Resolves authoritative RTO office name and description for an Indian license plate."""
+    if not plate:
+        return "RTO", "Auto-saved via real-time ANPR scanner"
+    clean = plate.replace(" ", "").upper()
+    if "BH" in clean[:4]:
+        yy = clean[:2]
+        reg_yr = f"20{yy}" if yy.isdigit() else "Current Series"
+        return "MoRTH Central Portal (BH Series)", f"National Bharat (BH) Series vehicle registered via MoRTH Central Portal ({reg_yr})."
+    
+    st_code = clean[:2]
+    st_name = STATE_NAME_BY_CODE.get(st_code, st_code)
+    
+    if len(clean) >= 4 and clean[2:4].isdigit():
+        rto_key = f"{st_code}-{clean[2:4]}"
+        rto_info = RTO_BY_CODE.get(rto_key)
+        if rto_info:
+            office = rto_info.get("office_name") or f"RTO {rto_info.get('district', '')}"
+            return f"{office}, {st_name}", f"Registered at {rto_info.get('city', rto_info.get('district', ''))} RTO ({rto_key}), {st_name}."
+    
+    return f"{st_name} Transport Dept", f"Registered under {st_name} state transport jurisdiction."
 
 router = APIRouter()
 
@@ -45,7 +71,8 @@ def evaluate_and_record_scan(
     auto_registered = False
 
     if not vehicle:
-        # Directly save to registry!
+        # Directly save to registry with verified RTO details!
+        rto_name, rto_notes = resolve_registered_rto(final_plate)
         vehicle = Vehicle(
             registration_number=final_plate,
             vehicle_type=VehicleType.SEDAN,
@@ -54,9 +81,9 @@ def evaluate_and_record_scan(
             color="Standard",
             status=VehicleStatus.CLEAR,
             risk_level=RiskLevel.NONE,
-            registered_rto=f"{final_plate[:2]} RTO" if len(final_plate) >= 2 else "RTO",
+            registered_rto=rto_name,
             registration_date=datetime.utcnow(),
-            notes=f"Auto-saved directly to registry via real-time ANPR scanner at {location_name or 'Field Checkpoint'}"
+            notes=f"{rto_notes} Auto-saved via real-time ANPR scanner at {location_name or 'Field Checkpoint'}."
         )
         db.add(vehicle)
         db.commit()
