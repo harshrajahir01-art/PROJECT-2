@@ -108,7 +108,7 @@ class VehicleShieldCVPipeline:
                 best_bbox = c_box
 
                 # If we achieved a high-confidence structural plate match, break early for sub-second speed!
-                if score >= 0.85:
+                if score >= 0.95:
                     break
 
         if not best_norm or best_score < 0.35:
