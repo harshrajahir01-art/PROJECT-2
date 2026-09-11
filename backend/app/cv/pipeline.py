@@ -75,6 +75,8 @@ class VehicleShieldCVPipeline:
                 "plate_detection_confidence": 0.0
             }
 
+        h, w = image_np.shape[:2]
+
         # Extract prioritized candidate plate crops (character clusters, contrast-bounded rectangles, fallback frames)
         candidates = self.detector.get_candidate_crops(image_np)
         if not candidates:
