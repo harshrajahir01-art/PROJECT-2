@@ -118,7 +118,7 @@ class OCREngine:
         if self._has_tesseract:
             try:
                 import pytesseract
-                for psm in [7, 11, 6]:
+                for psm in [7, 8]:
                     cfg = f'--oem 3 --psm {psm} -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
                     t_res = pytesseract.image_to_string(image, config=cfg).strip()
                     if t_res and t_res not in text_parts:
