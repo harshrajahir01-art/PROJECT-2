@@ -75,29 +75,10 @@ class VehicleShieldCVPipeline:
                 "plate_detection_confidence": 0.0
             }
 
-        h, w = image_np.shape[:2]
-
-        # Candidate A: Reticle focal region (center 80% width, center 55% height)
-        # Highly effective for on-screen plate videos, dashcams, and mobile scanning
-        rx1, rx2 = int(w * 0.10), int(w * 0.90)
-        ry1, ry2 = int(h * 0.20), int(h * 0.80)
-        reticle_crop = image_np[ry1:ry2, rx1:rx2]
-
-        # Candidate B: Morphological contour plate detection
-        plate_crop, bbox, det_conf = self.detector.detect_plate(image_np)
-
-        # Decide which candidate to test first
-        # If input image is already a plate crop (ar > 2.0 and not full frame), test it directly
-        ar = float(w) / float(max(h, 1))
-        if 1.8 <= ar <= 6.5 and h < 500:
-            candidates = [(image_np, {"x": 0, "y": 0, "width": w, "height": h}, 0.90)]
-        else:
-            candidates = []
-            if reticle_crop.size > 0:
-                candidates.append((reticle_crop, {"x": rx1, "y": ry1, "width": rx2 - rx1, "height": ry2 - ry1}, 0.85))
-            if plate_crop is not None and plate_crop.size > 0:
-                candidates.append((plate_crop, bbox, det_conf))
-            candidates.append((image_np, {"x": 0, "y": 0, "width": w, "height": h}, 0.70))
+        # Extract prioritized candidate plate crops (character clusters, contrast-bounded rectangles, fallback frames)
+        candidates = self.detector.get_candidate_crops(image_np)
+        if not candidates:
+            candidates = [(image_np, {"x": 0, "y": 0, "width": w, "height": h}, 0.50)]
 
         best_norm = None
         best_score = -1.0
